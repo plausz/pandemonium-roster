@@ -14,6 +14,22 @@ const reply = (data) => json({ type: R.MESSAGE, data });
 const strip = ({ flags, ...rest }) => rest;
 const update = (data) => json({ type: R.UPDATE, data: strip(data) });
 
+// A Discord 3 másodpercen belül választ vár. Ami tárolt adatot olvas, azt azonnal „elhalasztott” válasszal
+// nyugtázzuk, és a tényleges tartalmat utólag írjuk be – így hidegindításnál sem akad el a felület.
+function deferred(i, { ephemeralNew = false } = {}, work) {
+  const started = Date.now();
+  waitUntil(
+    work()
+      .then((payload) => editOriginal(i.token, payload))
+      .catch(async (e) => {
+        console.error('deferred', i.data?.custom_id ?? i.data?.name, e);
+        await editOriginal(i.token, W.errorMessage('Nem sikerült betölteni.')).catch(() => {});
+      })
+      .finally(() => console.log(`[timing] ${i.data?.custom_id ?? i.data?.name} ${Date.now() - started}ms`)),
+  );
+  return ephemeralNew ? json({ type: R.DEFERRED_MESSAGE, data: { flags: 64 } }) : json({ type: R.DEFERRED_UPDATE });
+}
+
 export async function POST(request) {
   const raw = await request.text();
   const ok = verifySignature(raw, request.headers.get('x-signature-ed25519'), request.headers.get('x-signature-timestamp'));
@@ -24,9 +40,9 @@ export async function POST(request) {
   if (i.guild_id !== GUILD_ID()) return reply({ flags: 64, content: 'Ez a bot csak a Pandemonium szerveren működik.' });
 
   try {
-    if (i.type === T.COMMAND) return await onCommand(i);
-    if (i.type === T.COMPONENT) return await onComponent(i);
-    if (i.type === T.MODAL) return await onModal(i);
+    if (i.type === T.COMMAND) return onCommand(i);
+    if (i.type === T.COMPONENT) return onComponent(i);
+    if (i.type === T.MODAL) return onModal(i);
   } catch (e) {
     console.error(e);
     return (i.type === T.COMMAND ? reply : update)(W.errorMessage('Váratlan hiba.'));
@@ -34,12 +50,14 @@ export async function POST(request) {
   return new Response('unknown interaction', { status: 400 });
 }
 
-async function onCommand(i) {
-  if (i.data.name === 'karakter') return reply(W.homeMessage(await getMember(i.member.user.id)));
+const loadHome = (userId, note) => async () => W.homeMessage(await getMember(userId), note);
+
+function onCommand(i) {
+  if (i.data.name === 'karakter') return deferred(i, { ephemeralNew: true }, loadHome(i.member.user.id));
   return reply({ flags: 64, content: 'Ismeretlen parancs.' });
 }
 
-async function onComponent(i) {
+function onComponent(i) {
   const id = i.data.custom_id;
   const userId = i.member.user.id;
   const value = i.data.values?.[0];
@@ -52,14 +70,17 @@ async function onComponent(i) {
     return reply({ flags: 64, content: '🔄 A roster frissítése elindult, pár másodperc múlva látszik.' });
   }
 
-  if (id === 'menu:home') return show(W.homeMessage(await getMember(userId)));
-
+  if (id === 'menu:home') return deferred(i, { ephemeralNew: fromRoster }, loadHome(userId));
+  if (id === 'menu:alt') return deferred(i, {}, async () => W.altMessage(await getMember(userId), Number(value)));
   if (id === 'menu:delall') return update(W.confirmDeleteMessage());
 
-  if (id === 'menu:delall2' || id === 'menu:delalt') {
-    const rec = await getMember(userId);
-    const next = id === 'menu:delalt' && rec ? { ...rec, alt: null } : null;
-    waitUntil(commit(i, userId, next, id === 'menu:delalt' ? 'Az altodat töröltem.' : 'Az adataidat töröltem.'));
+  if (id === 'menu:delall2') {
+    waitUntil(commit(i, userId, () => null, 'Az adataidat töröltem.'));
+    return update(W.savingMessage());
+  }
+  if (id.startsWith('menu:delalt:')) {
+    const idx = Number(id.split(':')[2]);
+    waitUntil(commit(i, userId, (rec) => rec && { ...rec, alts: rec.alts.filter((_, k) => k !== idx) }, `Az Alt ${idx + 1} törölve.`));
     return update(W.savingMessage());
   }
 
@@ -67,6 +88,7 @@ async function onComponent(i) {
 
   if (parts[0] === 'w') {
     const [, slot, step, ...rest] = parts;
+    if (!W.isSlot(slot)) return update(W.errorMessage('Érvénytelen választás.'));
     switch (step) {
       case 'start':
         return show(W.stepRole(slot));
@@ -79,49 +101,44 @@ async function onComponent(i) {
         const [Rk] = rest;
         const C = Number(step === 'c' ? value : rest[1]);
         const specs = specsFor(C, Rk);
-        if (specs.length === 1) {
-          return update(step === 'c' ? W.stepOff(slot, Rk, C, specs[0].index) : W.stepClass(slot, Rk));
-        }
+        if (specs.length === 1) return update(step === 'c' ? W.stepOff(slot, Rk, C, specs[0].index) : W.stepClass(slot, Rk));
         return update(W.stepSpec(slot, Rk, C));
       }
       case 'p': // spec kiválasztva → offspec
         return update(W.stepOff(slot, rest[0], Number(rest[1]), Number(value)));
-      case 'o': // offspec kiválasztva → összegzés
-      case 'o2': {
+      case 'o2':
+        return update(W.stepOff(slot, rest[0], Number(rest[1]), Number(rest[2])));
+      case 'o': { // offspec kiválasztva → összegzés (a meglévő nevet betöltjük)
         const [Rk, Cs, Ps] = rest;
-        if (step === 'o2') return update(W.stepOff(slot, Rk, Number(Cs), Number(Ps)));
-        const { O } = W.parseKey([slot, Rk, Cs, Ps, value]);
-        const rec = await getMember(userId);
-        const existing = slot === 'm' ? rec?.main?.name : rec?.alt?.name;
-        return update(W.stepFinish(slot, Rk, Number(Cs), Number(Ps), O, existing));
+        const k = W.parseKey([slot, Rk, Cs, Ps, value]);
+        return deferred(i, {}, async () => {
+          const rec = W.normalize(await getMember(userId));
+          const existing = slot === 'm' ? rec?.main?.name : rec?.alts?.[Number(slot.slice(1))]?.name;
+          return W.stepFinish(slot, Rk, k.C, k.P, k.O, existing);
+        });
       }
     }
   }
 
   if (parts[0] === 'n') {
-    const key = parts.slice(1).join(':');
-    W.parseKey(parts.slice(1));
-    const rec = await getMember(userId);
-    const existing = parts[1] === 'm' ? rec?.main?.name : rec?.alt?.name;
-    return json({ type: R.MODAL, data: W.nameModal(key, parts[1], existing) });
+    const k = W.parseKey(parts.slice(1));
+    return json({ type: R.MODAL, data: W.nameModal(k.key, k.slot, k.name) });
   }
 
   if (parts[0] === 'v') {
     const k = W.parseKey(parts.slice(1));
-    const rec = await getMember(userId);
-    const existing = k.slot === 'm' ? rec?.main?.name : rec?.alt?.name;
-    waitUntil(saveChar(i, userId, k, existing ?? null));
+    waitUntil(saveChar(i, userId, k, k.name));
     return update(W.savingMessage());
   }
 
   return update(W.errorMessage('Ismeretlen művelet.'));
 }
 
-async function onModal(i) {
+function onModal(i) {
   const parts = i.data.custom_id.split(':');
   if (parts[0] !== 'm') return update(W.errorMessage('Ismeretlen űrlap.'));
   const k = W.parseKey(parts.slice(1));
-  const name = readModalValue(i.data.components, 'name')?.trim().slice(0, 24) || null;
+  const name = readModalValue(i.data.components, 'name')?.replace(/[|:]/g, '').trim().slice(0, 24) || null;
   waitUntil(saveChar(i, i.member.user.id, k, name));
   return update(W.savingMessage());
 }
@@ -136,16 +153,27 @@ function readModalValue(components, customId) {
   return null;
 }
 
-async function saveChar(i, userId, k, name) {
-  const rec = (await getMember(userId)) ?? { userId };
+function saveChar(i, userId, k, name) {
   const ch = { role: k.R, cls: k.C, spec: k.P, off: k.O === 'x' ? null : k.O, name };
-  const next = { ...rec, userId, [k.slot === 'm' ? 'main' : 'alt']: ch };
-  return commit(i, userId, next, '✅ Mentve.');
+  return commit(i, userId, (rec) => {
+    const base = rec ?? { userId, alts: [] };
+    if (k.slot === 'm') return { ...base, userId, main: ch };
+    if (!base.main) throw new Error('Altot csak main után lehet megadni.');
+    const idx = Number(k.slot.slice(1));
+    const alts = [...base.alts];
+    if (idx < alts.length) alts[idx] = ch;
+    else if (alts.length < W.MAX_ALTS) alts.push(ch);
+    else throw new Error('Elérted a maximális altszámot.');
+    return { ...base, userId, alts };
+  }, '✅ Mentve.');
 }
 
-// Tárolás → rangok igazítása → roster frissítése → az ephemeral üzenet lecserélése az eredményre.
-async function commit(i, userId, next, note) {
+// Olvasás → módosítás → tárolás → rangok igazítása → roster frissítése → az ephemeral üzenet lecserélése.
+async function commit(i, userId, mutate, note) {
+  const started = Date.now();
   try {
+    const rec = W.normalize(await getMember(userId));
+    const next = mutate(rec);
     if (next?.main) await saveMember(next);
     else await deleteMember(userId).catch(() => {});
     let roleNote = '';
@@ -155,10 +183,13 @@ async function commit(i, userId, next, note) {
       console.error('syncRoles', e);
       roleNote = '\n⚠️ A rangjaidat nem sikerült beállítani, szólj egy Officernek.';
     }
-    await publishRoster().catch((e) => console.error('publishRoster', e));
+    // Előbb a felhasználó kapja meg az eredményt, a roster frissítése utána jön.
     await editOriginal(i.token, W.homeMessage(next?.main ? next : null, note + roleNote));
+    await publishRoster().catch((e) => console.error('publishRoster', e));
   } catch (e) {
     console.error('commit', e);
-    await editOriginal(i.token, W.errorMessage('Nem sikerült menteni.')).catch(() => {});
+    await editOriginal(i.token, W.errorMessage(e.message?.startsWith('Alt') || e.message?.startsWith('Elérted') ? e.message : 'Nem sikerült menteni.')).catch(() => {});
+  } finally {
+    console.log(`[timing] commit ${i.data?.custom_id} ${Date.now() - started}ms`);
   }
 }

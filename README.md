@@ -2,9 +2,10 @@
 
 Discord-bot Vercelen (HTTP interactions, nincs állandóan futó folyamat). Élő cím: https://pandemonium-roster.vercel.app
 
-- `/karakter` parancs vagy a #roster üzenet **✏️ gombja** → lépésenként: szerep → class (csak a szerephez illők) → main spec → offspec (opcionális) → karakternév (opcionális). Ugyanígy egy alt.
-- Mentéskor a bot **beállítja a rangokat**: szerep-rang a main és az offspec alapján (🛡️ Tank / 💚 Healer / 🗡️ DPS), class-rang a main és az alt alapján. A klánrangokhoz (Panda, Friends…) nem nyúl.
-- A **#roster** üzenet minden mentéskor azonnal frissül: fent a Pandák részletesen (és akik még nem töltötték ki), alatta a többi rang statisztikája. 🔄 gomb kézi frissítéshez.
+- `/karakter` parancs vagy a #roster **✏️ gombja** → lépésenként: szerep → class (csak a szerephez illők) → main spec → offspec (opcionális) → karakternév (opcionális). Ugyanígy **legfeljebb 4 alt** (➕ gomb; meglévő alt módosítása/törlése a lenyíló listából).
+- Mentéskor a bot **beállítja a rangokat**: szerep-rang a main és az offspec alapján (🛡️ Tank / 💚 Healer / 🗡️ DPS), class-rang a main és az összes alt alapján. A klánrangokhoz (Panda, Friends…) nem nyúl.
+- A **#roster** két üzenete minden mentéskor frissül: (1) Panda roster a mainekkel (és akik még nem töltötték ki) + a többi rang statisztikája, (2) **Panda alt roster** szerepek szerint. A gombok (✏️, 🔄) az alt roster alatt vannak.
+- Ami tárolt adatot olvas (parancs, Vissza, összegzés, alt kiválasztása), az halasztott válasszal megy, így hidegindításnál sem lépi túl a Discord 3 mp-es határát. A futásidők a Vercel naplóban `[timing]` sorként látszanak.
 - **Napi karbantartás** (03:00 UTC): a szerverről kilépett tagok adatai törlődnek, a roster újraépül.
 
 ## Fájlok
