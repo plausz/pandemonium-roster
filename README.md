@@ -1,6 +1,6 @@
 # Pandemonium Roster bot
 
-Discord-bot Vercelen (HTTP interactions, nincs állandóan futó folyamat).
+Discord-bot Vercelen (HTTP interactions, nincs állandóan futó folyamat). Élő cím: https://pandemonium-roster.vercel.app
 
 - `/karakter` parancs vagy a #roster üzenet **✏️ gombja** → lépésenként: szerep → class (csak a szerephez illők) → main spec → offspec (opcionális) → karakternév (opcionális). Ugyanígy egy alt.
 - Mentéskor a bot **beállítja a rangokat**: szerep-rang a main és az offspec alapján (🛡️ Tank / 💚 Healer / 🗡️ DPS), class-rang a main és az alt alapján. A klánrangokhoz (Panda, Friends…) nem nyúl.
