@@ -1,0 +1,20 @@
+{
+  "name": "pandemonium-roster",
+  "version": "1.0.0",
+  "description": "Pandemonium Discord roster bot (Vercel, HTTP interactions)",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "node --experimental-test-module-mocks --test test/*.test.js"
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.8.2",
+    "@vercel/functions": "^3.10.4"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  }
+}
