@@ -26,7 +26,7 @@ Discord-bot Vercelen (HTTP interactions, nincs állandóan futó folyamat).
 | `DISCORD_TOKEN` | Developer Portal → Bot → Reset Token (**titkos**, „Sensitive” típusként add meg) |
 | `GUILD_ID` | `374715859727548417` |
 | `ROSTER_CHANNEL_ID` | a #roster csatorna azonosítója |
-| `SETUP_SECRET`, `CRON_SECRET` | tetszőleges hosszú véletlen szöveg |
+| `SETUP_SECRET`, `CRON_SECRET` | opcionális; ha be vannak állítva, a setup és a cron csak ezzel indítható |
 | `BLOB_READ_WRITE_TOKEN` | automatikusan, amikor a Blob tárat a projekthez kötöd |
 
 ## Telepítés (egyszer)
@@ -36,7 +36,7 @@ Discord-bot Vercelen (HTTP interactions, nincs állandóan futó folyamat).
 4. Környezeti változók beállítása, majd újratelepítés.
 5. Bot meghívása a szerverre (*Manage Roles*, *View Channels*, *Send Messages*, *Embed Links* jog); a bot rangja kerüljön a szerep- és class-rangok **fölé**.
 6. Developer Portal → General Information → **Interactions Endpoint URL**: `https://<projekt>.vercel.app/api/interactions`
-7. Böngészőben: `https://<projekt>.vercel.app/api/setup?secret=<SETUP_SECRET>` → regisztrálja a parancsot és kiteszi a rostert.
+7. Böngészőben: `https://<projekt>.vercel.app/api/setup` (ha van SETUP_SECRET: `?secret=…`) → regisztrálja a parancsot és kiteszi a rostert.
 
 ## Teszt
 `npm install && npm test`

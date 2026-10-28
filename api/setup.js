@@ -3,10 +3,11 @@ import { managedRoleMap } from '../lib/roles.js';
 import { publishRoster } from '../lib/roster.js';
 
 // Egyszeri / ismételhető beállítás: regisztrálja a /karakter parancsot és kiteszi (vagy frissíti) a roster üzenetet.
-// Hívás: GET /api/setup?secret=<SETUP_SECRET>
+// Hívás: GET /api/setup (ha SETUP_SECRET be van állítva: /api/setup?secret=<SETUP_SECRET>).
+// Idempotens: újra meghívva csak felülírja ugyanazt a parancsot és frissíti ugyanazt a roster üzenetet.
 export async function GET(request) {
   const url = new URL(request.url);
-  if (!process.env.SETUP_SECRET || url.searchParams.get('secret') !== process.env.SETUP_SECRET) {
+  if (process.env.SETUP_SECRET && url.searchParams.get('secret') !== process.env.SETUP_SECRET) {
     return new Response('unauthorized', { status: 401 });
   }
   const report = {};
