@@ -7,6 +7,7 @@ import { publishRoster } from '../lib/roster.js';
 import { syncGuild } from '../lib/sync.js';
 import * as W from '../lib/wizard.js';
 import { handlePairing, searchModal, cleanQuery } from '../lib/pairing.js';
+import { applyModal, submitApplication, closeConfirm, closeApplication, FIELDS as TGF_FIELDS } from '../lib/tgf.js';
 
 const T = { PING: 1, COMMAND: 2, COMPONENT: 3, MODAL: 5 };
 const R = { PONG: 1, MESSAGE: 4, DEFERRED_MESSAGE: 5, DEFERRED_UPDATE: 6, UPDATE: 7, MODAL: 9 };
@@ -140,7 +141,36 @@ function pairing(i, id, values, ephemeralNew = false) {
   return json(ephemeralNew ? { type: R.DEFERRED_MESSAGE, data: { flags: 64 } } : { type: R.DEFERRED_UPDATE });
 }
 
+// Tagfelvétel (tgf:…): a jelentkezés gombja bárkinek működik, a lezárás csak Officernek.
+function onTgfComponent(i) {
+  const [, action, userId] = i.data.custom_id.split(':');
+  if (action === 'apply') return json({ type: R.MODAL, data: applyModal() });
+  if (!isOfficer(i)) return reply({ flags: 64, content: 'A jelentkezést csak Officer zárhatja le.' });
+  if (action === 'close') return reply(closeConfirm(userId));
+  if (action === 'close2') {
+    waitUntil(closeApplication(userId, i.channel_id, displayName(i.member)).catch((e) => console.error('tgf close', e)));
+    return update({ content: '🔒 Lezárva, a csatorna pár másodperc múlva törlődik.', components: [] });
+  }
+  return reply({ flags: 64, content: 'Ismeretlen művelet.' });
+}
+
+function onTgfSubmit(i) {
+  const answers = Object.fromEntries(TGF_FIELDS.map((f) => [f.id, (readModalValue(i.data.components, f.id) ?? '').trim()]));
+  const started = Date.now();
+  waitUntil(
+    submitApplication(i.member, answers)
+      .then((payload) => editOriginal(i.token, payload))
+      .catch(async (e) => {
+        console.error('tgf submit', e);
+        await editOriginal(i.token, { content: '⚠️ Nem sikerült létrehozni a jelentkezésed csatornáját. Írj egy Officernek, vagy próbáld újra később.' }).catch(() => {});
+      })
+      .finally(() => console.log(`[timing] tgf:submit ${Date.now() - started}ms`)),
+  );
+  return json({ type: R.DEFERRED_MESSAGE, data: { flags: 64 } });
+}
+
 function onComponent(i) {
+  if (i.data.custom_id?.startsWith('tgf:')) return onTgfComponent(i);
   if (i.data.custom_id?.startsWith('g:')) {
     if (!isOfficer(i)) return reply({ flags: 64, content: 'Ehhez Officer jog kell.' });
     // A kereső felugró ablak azonnal nyílik (nem kell hozzá tárolt adat).
@@ -226,6 +256,7 @@ function onComponent(i) {
 }
 
 function onModal(i) {
+  if (i.data.custom_id === 'tgf:submit') return onTgfSubmit(i);
   if (i.data.custom_id === 'g:q') {
     if (!isOfficer(i)) return reply({ flags: 64, content: 'Ehhez Officer jog kell.' });
     return pairing(i, 'g:q', [cleanQuery(readModalValue(i.data.components, 'query'))]);

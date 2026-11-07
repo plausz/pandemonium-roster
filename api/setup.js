@@ -1,6 +1,7 @@
 import { dc, APP_ID, GUILD_ID } from '../lib/discord.js';
 import { managedRoleMap } from '../lib/roles.js';
 import { publishRoster } from '../lib/roster.js';
+import { publishTgfPanel } from '../lib/tgf.js';
 
 // Egyszeri / ismételhető beállítás: regisztrálja a /karakter parancsot és kiteszi (vagy frissíti) a roster üzenetet.
 // Hívás: GET /api/setup (ha SETUP_SECRET be van állítva: /api/setup?secret=<SETUP_SECRET>).
@@ -45,5 +46,7 @@ export async function GET(request) {
   report.missingRoles = Object.entries(map).filter(([, id]) => !id).map(([k]) => k);
 
   report.rosterMessageId = await publishRoster();
+  // Tagfelvételi panel (csak ha TGF_CHANNEL_ID be van állítva); a hiányzó rangokat névvel jelzi.
+  report.tgf = await publishTgfPanel().catch((e) => ({ error: e.message }));
   return Response.json(report);
 }
