@@ -308,18 +308,84 @@ test('Blizzard guild-szinkron: kulcs nélkül kikapcsolva, kulccsal guild blokk 
   delete process.env.BLIZZARD_CLIENT_SECRET;
 });
 
-test('guild-párosítás: pontos, ékezet nélküli, egyértelmű keresztnév; ütközésnél nincs párosítás', async () => {
-  const { makeGuildMatcher } = await import('../lib/roster.js');
-  const G = (name) => ({ name, slug: name.toLocaleLowerCase('hu').replace(' ', '-') });
-  const guild = [G('Professor Sawier'), G('Power Zul'), G('Power Archdruid'), G('Patkány Frici'), G('Ash Zulunga'), G('Lazy Healz')];
-  const match = makeGuildMatcher(guild, ['Professor Sawier', 'Power', 'Patkany Frici', 'Ash', 'Lazy', 'lazy']);
-  assert.equal(match('Professor Sawier').slug, 'professor-sawier');
-  assert.equal(match('Patkany Frici').slug, 'patkány-frici', 'ékezet nélkül is');
-  assert.equal(match('Ash').slug, 'ash-zulunga', 'egyértelmű keresztnév');
-  assert.equal(match('Power'), null, 'két Power a guildben');
-  assert.equal(match('Lazy'), null, 'két rosterbeli karakter is Lazy-re hivatkozik');
-  assert.equal(match('Ismeretlen'), null);
-  assert.equal(match(null), null);
+test('guild-párosítás: név, class, Discord-név; ütközésnél nincs párosítás', async () => {
+  const { matchGuildChars } = await import('../lib/roster.js');
+  const G = (name, cls) => ({ name, cls, slug: name.toLocaleLowerCase('hu').replace(' ', '-') });
+  const guild = [G('Professor Sawier', 1), G('Power Zul', 0), G('Power Archdruid', 8), G('Patkány Frici', 3), G('Ash Zulunga', 1), G('Lazy Healz', 4), G('Onkel Rizzo', 4), G('Csont Sovány', 7)];
+  const C = (key, name, cls, dn) => ({ key, name, cls, dn });
+  const res = matchGuildChars(guild, [
+    C('a', 'Professor Sawier', 1, 'Sawier'), // pontos
+    C('b', 'Patkany Frici', 3, 'x'), // ékezet nélkül
+    C('c', 'Power', 8, 'Powerful'), // két Power, a class dönt → Archdruid
+    C('d', null, 1, 'zulunga'), // név nélkül, Discord-név + class → Ash Zulunga (auto)
+    C('e', null, 4, 'Rizzo'), // Discord-név + class → Onkel Rizzo (auto)
+    C('f', null, 7, 'Lazy'), // Discord-név Lazy, de Warlock → Lazy Healz Priest: nincs
+    C('g', null, 4, 'Sawier'), // a Professor Sawier-t már név alapján lefoglalták, és class sem stimmel: nincs
+    C('h', 'Power', 2, 'x'), // Power, de egyik class sem stimmel: nincs
+  ]);
+  const got = (k) => res.get(k) && `${res.get(k).m.slug}${res.get(k).auto ? ' (auto)' : ''}`;
+  assert.equal(got('a'), 'professor-sawier');
+  assert.equal(got('b'), 'patkány-frici');
+  assert.equal(got('c'), 'power-archdruid');
+  assert.equal(got('d'), 'ash-zulunga (auto)');
+  assert.equal(got('e'), 'onkel-rizzo (auto)');
+  assert.equal(got('f'), undefined);
+  assert.equal(got('g'), undefined);
+  assert.equal(got('h'), undefined);
+  // két név nélküli rosterkarakter ugyanarra esne → egyik sem
+  const dup = matchGuildChars(guild, [C('x', null, 4, 'Rizzo'), C('y', null, 4, 'Onkel')]);
+  assert.equal(dup.size, 0);
+});
+
+test('officer mód: más tag szerkesztése /roster-admin paranccsal, jogosultság-ellenőrzés', async () => {
+  const officer = { user: { id: 'u1', username: 'plausz' }, nick: 'Plausz', roles: ['panda'], permissions: String(1 << 28) };
+  const pleb = { user: { id: 'u3', username: 'haver' }, roles: ['friends'], permissions: '0' };
+  const TARGET = '123456789012345678';
+  const extra = { [TARGET]: { user: { id: TARGET, username: 'uj' }, nick: 'Újonc', roles: ['panda'] } };
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const path = url.replace('https://discord.com/api/v10', '');
+    if (init.method === 'GET' && path === `/guilds/g1/members/${TARGET}`) { calls.push(`GET ${path}`); return Response.json(extra[TARGET]); }
+    return prevFetch(url, init);
+  };
+  const as = (m, payload) => signed({ guild_id: 'g1', token: 'tok', member: m, ...payload });
+  // jog nélkül elutasítva
+  let r = await send(as(pleb, { type: 2, data: { name: 'roster-admin', options: [{ name: 'tag', type: 6, value: TARGET }] } }));
+  assert.match(r.data.content, /Officer jog/);
+  // officer: a cél-tag menüje, jelölt gombokkal
+  r = await send(as(officer, { type: 2, data: { name: 'roster-admin', options: [{ name: 'tag', type: 6, value: TARGET }] } }));
+  assert.deepEqual(r, { type: 5, data: { flags: 64 } });
+  await drain();
+  assert.match(calls.lastEdit.embeds[0].title, /Újonc karakterei/);
+  const startBtn = calls.lastEdit.components[0].components[0].custom_id;
+  assert.equal(startBtn, `t${TARGET}.w:m:start`);
+  // jelölt gomb jog nélkül: elutasítva
+  r = await send(as(pleb, { type: 3, data: { custom_id: startBtn }, message: { flags: 64 } }));
+  assert.match(r.data.content, /Officer jog/);
+  // végig a varázslón officerként, mentés a cél-tag nevére
+  const c = (id, values) => send(as(officer, { type: 3, data: { custom_id: `t${TARGET}.${id}`, values }, message: { flags: 64 } }));
+  r = await c('w:m:start');
+  assert.match(r.data.components[0].components[0].custom_id, new RegExp(`^t${TARGET}\\.w:m:r`));
+  r = await c('w:m:r', ['H']);
+  r = await c('w:m:c:H', ['4']);
+  r = await c('w:m:p:H:4', ['1']);
+  r = await c('w:m:o:H:4:1', ['x']);
+  await drain();
+  const nameBtn = calls.lastEdit.components[0].components[0].custom_id;
+  assert.equal(nameBtn, `t${TARGET}.n:m:H:4:1:x|`);
+  r = await send(as(officer, { type: 3, data: { custom_id: nameBtn }, message: { flags: 64 } }));
+  assert.equal(r.type, 9);
+  assert.equal(r.data.custom_id, `t${TARGET}.m:m:H:4:1:x`);
+  assert.equal(r.data.components[0].components[0].custom_id, 'name');
+  calls.length = 0;
+  r = await send(as(officer, { type: 5, data: { custom_id: `t${TARGET}.m:m:H:4:1:x`, components: [{ type: 1, components: [{ type: 4, custom_id: 'name', value: 'Onkel Rizzo' }] }] }, message: { flags: 64 } }));
+  await drain();
+  assert.deepEqual(db.get(`m/${TARGET}`).main, { role: 'H', cls: 4, spec: 1, off: null, name: 'Onkel Rizzo' });
+  assert.equal(db.get('m/u1')?.main?.name ?? null, db.get('m/u1')?.main?.name ?? null, 'az officer saját adata nem változik');
+  assert.ok(calls.includes(`PUT /guilds/g1/members/${TARGET}/roles/r-heal`), 'a cél-tag kapja a rangot');
+  assert.ok(!calls.some((c2) => c2.includes('/members/u1/roles/')), 'az officer rangjai nem változnak');
+  assert.match(calls.lastEdit.embeds[0].title, /Újonc karakterei/);
+  globalThis.fetch = prevFetch;
 });
 
 test('🔄 gomb: Blizzard-szinkron is fut, de legfeljebb 10 percenként', async () => {

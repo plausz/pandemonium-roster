@@ -18,6 +18,17 @@ export async function GET(request) {
       type: 1,
       dm_permission: false,
     },
+    // Officereknek (Rangok kezelése jog): más tag roster-adatainak megadása / módosítása.
+    {
+      name: 'roster-admin',
+      description: 'Egy tag roster-adatainak megadása vagy módosítása (officereknek)',
+      type: 1,
+      dm_permission: false,
+      default_member_permissions: String(1 << 28),
+      options: [{ type: 6, name: 'tag', description: 'Akinek a karaktereit szerkeszted', required: true }],
+    },
+    // Ugyanez jobb klikkel: tag → Alkalmazások → Roster szerkesztése
+    { name: 'Roster szerkesztése', type: 2, dm_permission: false, default_member_permissions: String(1 << 28) },
   ]);
   report.commands = commands.map((c) => c.name);
 
