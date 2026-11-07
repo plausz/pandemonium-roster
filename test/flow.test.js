@@ -409,3 +409,68 @@ test('🔄 gomb: Blizzard-szinkron is fut, de legfeljebb 10 percenként', async 
   delete process.env.BLIZZARD_CLIENT_ID;
   delete process.env.BLIZZARD_CLIENT_SECRET;
 });
+
+test('officer párosítás: lista → karakter → tag → main neve / új alt / DM, jogosultság', async () => {
+  const officer = { user: { id: 'u1', username: 'plausz' }, nick: 'Plausz', roles: ['panda'], permissions: String(1 << 28) };
+  const pleb = { user: { id: 'u3', username: 'haver' }, roles: ['friends'], permissions: '0' };
+  const prevFetch = globalThis.fetch;
+  const dms = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const path = url.replace('https://discord.com/api/v10', '');
+    if (init.method === 'GET' && path === '/guilds/g1/members/u2') return Response.json(MEMBERS[1]);
+    if (path === '/users/@me/channels') return Response.json({ id: `dm-${JSON.parse(init.body).recipient_id}` });
+    if (path.startsWith('/channels/dm-')) { dms.push({ path, body: JSON.parse(init.body) }); return Response.json({ id: 'x' }); }
+    return prevFetch(url, init);
+  };
+  db.set('guild', { syncedAt: new Date().toISOString(), members: [
+    { name: 'Zulu Rogue', slug: 'zulu-rogue', level: 20, cls: 3, ilvl: 30 },
+    { name: 'Zulu Paladin', slug: 'zulu-paladin', level: 18, cls: 1, ilvl: 25 },
+  ] });
+  db.set('m/u2', { userId: 'u2', main: { role: 'D', cls: 3, spec: 0, off: null, name: null }, alts: [] });
+  const as = (m, payload) => signed({ guild_id: 'g1', token: 'tok', member: m, ...payload });
+  const g = async (custom_id, values) => { const r = await send(as(officer, { type: 3, data: { custom_id, values }, message: { flags: 64 } })); await drain(); return r; };
+
+  let r = await send(as(pleb, { type: 2, data: { name: 'parositas' } }));
+  assert.match(r.data.content, /Officer jog/);
+  r = await send(as(pleb, { type: 3, data: { custom_id: 'g:list:0' }, message: { flags: 64 } }));
+  assert.match(r.data.content, /Officer jog/);
+
+  r = await send(as(officer, { type: 2, data: { name: 'parositas' } }));
+  assert.deepEqual(r, { type: 5, data: { flags: 64 } });
+  await drain();
+  // a név nélküli Rogue main Discord-neve „zulu”, de két Zulu van a guildben → csak a class dönt: Zulu Rogue automatikusan párosul
+  let opts = calls.lastEdit.components[0].components[0].options.map((o) => o.value);
+  assert.deepEqual(opts, ['zulu-paladin']);
+
+  r = await g('g:pick', ['zulu-paladin']);
+  assert.equal(r.type, 6);
+  assert.equal(calls.lastEdit.components[0].components[0].type, 5, 'Discord-tag választó');
+  await g('g:who:zulu-paladin', ['u2']);
+  const btns = calls.lastEdit.components.flatMap((rw) => rw.components);
+  const mainBtn = btns.find((b) => b.custom_id === 'g:set:zulu-paladin:u2:m');
+  assert.ok(mainBtn.disabled, 'Rogue main nem kaphat Paladin nevet');
+  const newAlt = btns.find((b) => b.custom_id === 'g:new:zulu-paladin:u2:a');
+  assert.ok(newAlt && !newAlt.disabled);
+
+  await g('g:new:zulu-paladin:u2:a');
+  assert.deepEqual(calls.lastEdit.components[0].components[0].options.map((o) => o.label), ['Holy', 'Protection', 'Retribution']);
+  calls.length = 0;
+  await g('g:spec:zulu-paladin:u2:a', ['1']);
+  assert.deepEqual(db.get('m/u2').alts, [{ role: 'T', cls: 1, spec: 1, off: null, name: 'Zulu Paladin' }]);
+  assert.ok(calls.includes('PUT /guilds/g1/members/u2/roles/c-Paladin'), 'class-rang a tagnak');
+  assert.match(calls.lastEdit.embeds[0].description, /Zulu Paladin\*\* felvéve zulu altjaként/);
+  assert.match(calls.lastEdit.embeds[0].description, /\*\*0\*\* guildkarakter nincs még a rosterben/);
+
+  // meglévő main nevének beállítása azonos classnál
+  db.get('guild').members.push({ name: 'Rogue Masik', slug: 'rogue-masik', level: 12, cls: 3, ilvl: 15 });
+  db.set('m/u2', { userId: 'u2', main: { role: 'D', cls: 3, spec: 0, off: null, name: 'Valami Mas' }, alts: [] });
+  await g('g:set:rogue-masik:u2:m');
+  assert.equal(db.get('m/u2').main.name, 'Rogue Masik');
+
+  // DM-felkérés
+  await g('g:dm:u2:zulu-rogue');
+  assert.equal(dms.length, 1);
+  assert.match(dms[0].body.content, /<#roster>.*Zulu Rogue/s);
+  assert.match(calls.lastEdit.embeds[0].description, /Üzenetet küldtem/);
+  globalThis.fetch = prevFetch;
+});

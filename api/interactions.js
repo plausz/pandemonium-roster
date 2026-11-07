@@ -6,6 +6,7 @@ import { syncRoles } from '../lib/roles.js';
 import { publishRoster } from '../lib/roster.js';
 import { syncGuild } from '../lib/sync.js';
 import * as W from '../lib/wizard.js';
+import { handlePairing } from '../lib/pairing.js';
 
 const T = { PING: 1, COMMAND: 2, COMPONENT: 3, MODAL: 5 };
 const R = { PONG: 1, MESSAGE: 4, DEFERRED_MESSAGE: 5, DEFERRED_UPDATE: 6, UPDATE: 7, MODAL: 9 };
@@ -113,10 +114,36 @@ function onCommand(i) {
     console.log(`[admin] ${i.data.name} channel=${i.channel?.name ?? i.channel_id} channelType=${i.channel?.type} context=${i.context}`);
     return deferred(ctx, { ephemeralNew: true }, loadHome(ctx));
   }
+  if (i.data.name === 'parositas') {
+    if (!isOfficer(i)) return reply({ flags: 64, content: 'Ehhez Officer jog kell (Rangok kezelése).' });
+    return pairing(i, 'g:list:0', [], true);
+  }
   return reply({ flags: 64, content: 'Ismeretlen parancs.' });
 }
 
+// Officer-párosítás (g:…): halasztott válasz, a roster frissítése a válasz után.
+function pairing(i, id, values, ephemeralNew = false) {
+  const started = Date.now();
+  waitUntil((async () => {
+    try {
+      const r = await handlePairing(id, values);
+      await editOriginal(i.token, r.payload);
+      if (r.after) await r.after().catch((e) => console.error('pairing after', e));
+    } catch (e) {
+      console.error('pairing', id, e);
+      await editOriginal(i.token, { content: '', embeds: [{ title: 'Nem sikerült', description: e.userMessage ?? 'Váratlan hiba. Próbáld újra.', color: 0xed4245 }], components: [{ type: 1, components: [{ type: 2, style: 2, custom_id: 'g:list:0', label: 'Vissza a listához' }] }] }).catch(() => {});
+    } finally {
+      console.log(`[timing] ${id} ${Date.now() - started}ms`);
+    }
+  })());
+  return json(ephemeralNew ? { type: R.DEFERRED_MESSAGE, data: { flags: 64 } } : { type: R.DEFERRED_UPDATE });
+}
+
 function onComponent(i) {
+  if (i.data.custom_id?.startsWith('g:')) {
+    if (!isOfficer(i)) return reply({ flags: 64, content: 'Ehhez Officer jog kell.' });
+    return pairing(i, i.data.custom_id, i.data.values);
+  }
   const ctx = context(i);
   if (ctx.denied) return reply({ flags: 64, content: 'Ehhez Officer jog kell.' });
   const { id, userId } = ctx;

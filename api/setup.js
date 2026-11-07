@@ -27,6 +27,14 @@ export async function GET(request) {
       default_member_permissions: String(1 << 28),
       options: [{ type: 6, name: 'tag', description: 'Akinek a karaktereit szerkeszted', required: true }],
     },
+    // Officereknek: a Blizzard guild-listából a rosterben nem szereplő karakterek hozzárendelése tagokhoz.
+    {
+      name: 'parositas',
+      description: 'Guildkarakterek párosítása tagokhoz, emlékeztető a ki nem töltötteknek (officereknek)',
+      type: 1,
+      dm_permission: false,
+      default_member_permissions: String(1 << 28),
+    },
     // Ugyanez jobb klikkel: tag → Alkalmazások → Roster szerkesztése
     { name: 'Roster szerkesztése', type: 2, dm_permission: false, default_member_permissions: String(1 << 28) },
   ]);
