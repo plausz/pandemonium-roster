@@ -34,6 +34,7 @@ export async function GET(request) {
       type: 1,
       dm_permission: false,
       default_member_permissions: String(1 << 28),
+      options: [{ type: 3, name: 'nev', description: 'Keresés a karakternevek között (névrészlet, ékezet nélkül is)', required: false, max_length: 40 }],
     },
     // Ugyanez jobb klikkel: tag → Alkalmazások → Roster szerkesztése
     { name: 'Roster szerkesztése', type: 2, dm_permission: false, default_member_permissions: String(1 << 28) },

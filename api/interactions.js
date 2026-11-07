@@ -6,7 +6,7 @@ import { syncRoles } from '../lib/roles.js';
 import { publishRoster } from '../lib/roster.js';
 import { syncGuild } from '../lib/sync.js';
 import * as W from '../lib/wizard.js';
-import { handlePairing } from '../lib/pairing.js';
+import { handlePairing, searchModal, cleanQuery } from '../lib/pairing.js';
 
 const T = { PING: 1, COMMAND: 2, COMPONENT: 3, MODAL: 5 };
 const R = { PONG: 1, MESSAGE: 4, DEFERRED_MESSAGE: 5, DEFERRED_UPDATE: 6, UPDATE: 7, MODAL: 9 };
@@ -116,7 +116,8 @@ function onCommand(i) {
   }
   if (i.data.name === 'parositas') {
     if (!isOfficer(i)) return reply({ flags: 64, content: 'Ehhez Officer jog kell (Rangok kezelése).' });
-    return pairing(i, 'g:list:0', [], true);
+    const q = cleanQuery(i.data.options?.find((o) => o.name === 'nev')?.value);
+    return pairing(i, q ? 'g:q' : 'g:list:0', q ? [q] : [], true);
   }
   return reply({ flags: 64, content: 'Ismeretlen parancs.' });
 }
@@ -142,6 +143,8 @@ function pairing(i, id, values, ephemeralNew = false) {
 function onComponent(i) {
   if (i.data.custom_id?.startsWith('g:')) {
     if (!isOfficer(i)) return reply({ flags: 64, content: 'Ehhez Officer jog kell.' });
+    // A kereső felugró ablak azonnal nyílik (nem kell hozzá tárolt adat).
+    if (i.data.custom_id.startsWith('g:search')) return json({ type: R.MODAL, data: searchModal(i.data.custom_id.split(':').slice(2).join(':')) });
     return pairing(i, i.data.custom_id, i.data.values);
   }
   const ctx = context(i);
@@ -223,6 +226,10 @@ function onComponent(i) {
 }
 
 function onModal(i) {
+  if (i.data.custom_id === 'g:q') {
+    if (!isOfficer(i)) return reply({ flags: 64, content: 'Ehhez Officer jog kell.' });
+    return pairing(i, 'g:q', [cleanQuery(readModalValue(i.data.components, 'query'))]);
+  }
   const ctx = context(i);
   if (ctx.denied) return reply({ flags: 64, content: 'Ehhez Officer jog kell.' });
   const parts = ctx.id.split(':');

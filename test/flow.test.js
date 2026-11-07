@@ -467,6 +467,22 @@ test('officer párosítás: lista → karakter → tag → main neve / új alt /
   await g('g:set:rogue-masik:u2:m');
   assert.equal(db.get('m/u2').main.name, 'Rogue Masik');
 
+  // névkereső: gomb → modal → szűrt lista; parancs opcióval közvetlenül
+  db.get('guild').members.push({ name: 'Árvíz Tűrő', slug: 'árvíz-tűrő', level: 11, cls: 7, ilvl: 12 });
+  r = await send(as(officer, { type: 3, data: { custom_id: 'g:search' }, message: { flags: 64 } }));
+  assert.equal(r.type, 9);
+  assert.equal(r.data.custom_id, 'g:q');
+  await send(as(officer, { type: 5, data: { custom_id: 'g:q', components: [{ type: 1, components: [{ type: 4, custom_id: 'query', value: 'arviz' }] }] }, message: { flags: 64 } }));
+  await drain();
+  assert.deepEqual(calls.lastEdit.components[0].components[0].options.map((o) => o.value), ['árvíz-tűrő']);
+  assert.match(calls.lastEdit.embeds[0].description, /Keresés: \*\*arviz\*\* — 1 találat/);
+  assert.ok(calls.lastEdit.components[1].components.some((b) => b.custom_id === 'g:search:arviz'), 'új keresés az előző szöveggel');
+  r = await send(as(officer, { type: 2, data: { name: 'parositas', options: [{ name: 'nev', type: 3, value: 'nincsilyen' }] } }));
+  await drain();
+  assert.match(calls.lastEdit.embeds[0].description, /0 találat/);
+  r = await send(as(pleb, { type: 5, data: { custom_id: 'g:q', components: [] }, message: { flags: 64 } }));
+  assert.match(r.data.content, /Officer jog/);
+
   // DM-felkérés
   await g('g:dm:u2:zulu-rogue');
   assert.equal(dms.length, 1);
