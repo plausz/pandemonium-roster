@@ -138,7 +138,7 @@ function onModal(i) {
   const parts = i.data.custom_id.split(':');
   if (parts[0] !== 'm') return update(W.errorMessage('Ismeretlen űrlap.'));
   const k = W.parseKey(parts.slice(1));
-  const name = readModalValue(i.data.components, 'name')?.replace(/[|:]/g, '').trim().slice(0, 24) || null;
+  const name = W.cleanName(readModalValue(i.data.components, 'name')) || null;
   waitUntil(saveChar(i, i.member.user.id, k, name));
   return update(W.savingMessage());
 }

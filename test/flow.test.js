@@ -204,3 +204,37 @@ test('cron: kilépett tag adatai törlődnek', async () => {
   assert.equal(r.removed, 1);
   assert.equal(db.get('m/u9'), undefined);
 });
+
+test('armory-link csak teljes (Név Vezetéknév) névhez', async () => {
+  const { armoryUrl, describeChar } = await import('../lib/data.js');
+  assert.equal(armoryUrl('Plausz Pandemonium'), 'https://www.aotc.gg/forever/character/eu/plausz-pandemonium');
+  assert.equal(armoryUrl('  Árvíz   Tűrő '), 'https://www.aotc.gg/forever/character/eu/%C3%A1rv%C3%ADz-t%C5%B1r%C5%91');
+  assert.equal(armoryUrl('Plausz'), null);
+  assert.equal(armoryUrl(null), null);
+  const ch = { role: 'D', cls: 7, spec: 0, off: null, name: 'Plausz Pandemonium' };
+  assert.match(describeChar(ch, { link: true }), /\[\*\*Plausz Pandemonium\*\*\]\(https:\/\/www\.aotc\.gg\/forever\/character\/eu\/plausz-pandemonium\)/);
+  assert.doesNotMatch(describeChar(ch), /aotc/);
+});
+
+test('class-eloszlás: mind a 9 class, arány, hiányzók, altok', async () => {
+  const { classDistribution } = await import('../lib/roster.js');
+  const D = (cls) => ({ role: 'D', cls, spec: 0, off: null, name: null });
+  const e = classDistribution([D(7), D(7), D(7), D(4)], [D(8)]);
+  assert.match(e.title, /4 fő/);
+  assert.match(e.description, /Warlock +██████████  3  75%/);
+  assert.match(e.description, /Priest +███░░░░░░░  1  25%/);
+  assert.match(e.description, /Druid +░{10}  0   0%  \+1 alt/);
+  assert.match(e.description, /Nincs még main:\*\* Warrior, Paladin, Hunter, Rogue, Shaman, Mage, Druid/);
+  for (const line of e.description.split('```')[1].trim().split('\n')) assert.ok(line.length <= 40, line);
+});
+
+test('roster: class-eloszlás a fő üzenetben, név modal teljes névvel', async () => {
+  const { buildRoster } = await import('../lib/roster.js');
+  const [main] = await buildRoster();
+  assert.equal(main.embeds.length, 3);
+  assert.match(main.embeds[1].title, /Class-eloszlás/);
+  const { nameModal } = await import('../lib/wizard.js');
+  const m = nameModal('m:D:7:0:x', 'm', 'Plausz Pandemonium');
+  assert.equal(m.components[0].components[0].max_length, 32);
+  assert.equal(m.components[0].components[0].value, 'Plausz Pandemonium');
+});

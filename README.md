@@ -4,7 +4,8 @@ Discord-bot Vercelen (HTTP interactions, nincs állandóan futó folyamat). Él�
 
 - `/karakter` parancs vagy a #roster **✏️ gombja** → lépésenként: szerep → class (csak a szerephez illők) → main spec → offspec (opcionális) → karakternév (opcionális). Ugyanígy **legfeljebb 4 alt** (➕ gomb; meglévő alt módosítása/törlése a lenyíló listából).
 - Mentéskor a bot **beállítja a rangokat**: szerep-rang a main és az offspec alapján (🛡️ Tank / 💚 Healer / 🗡️ DPS), class-rang a main és az összes alt alapján. A klánrangokhoz (Panda, Friends…) nem nyúl.
-- A **#roster** két üzenete minden mentéskor frissül: (1) Panda roster a mainekkel (és akik még nem töltötték ki) + a többi rang statisztikája, (2) **Panda alt roster** szerepek szerint. A gombok (✏️, 🔄) az alt roster alatt vannak.
+- A **#roster** két üzenete minden mentéskor frissül: (1) Panda roster a mainekkel (és akik még nem töltötték ki) + **class-eloszlás** (mind a 9 class: darab, arány, sáv, Panda altok száma, hiányzó classok) + a többi rang statisztikája, (2) **Panda alt roster** szerepek szerint. A gombok (✏️, 🔄) az alt roster alatt vannak.
+- **Armory-link:** ha a karakternév teljes (Forever: „Név Vezetéknév”, legfeljebb 32 karakter), a rosterben a név az armory oldalra mutat (alapértelmezés: aotc.gg, `https://www.aotc.gg/forever/character/eu/nev-vezeteknev`). A Foreverben nincsenek realmok, a karaktert a teljes név azonosítja; csak keresztnévhez nincs link. Hivatalos Blizzard Forever armory még nincs; az oldal az `ARMORY_URL` változóval cserélhető (`{slug}` helyőrzővel).
 - Ami tárolt adatot olvas (parancs, Vissza, összegzés, alt kiválasztása), az halasztott válasszal megy, így hidegindításnál sem lépi túl a Discord 3 mp-es határát. A futásidők a Vercel naplóban `[timing]` sorként látszanak.
 - **Napi karbantartás** (03:00 UTC): a szerverről kilépett tagok adatai törlődnek, a roster újraépül.
 
@@ -29,6 +30,7 @@ Discord-bot Vercelen (HTTP interactions, nincs állandóan futó folyamat). Él�
 | `ROSTER_CHANNEL_ID` | a #roster csatorna azonosítója |
 | `SETUP_SECRET`, `CRON_SECRET` | opcionális; ha be vannak állítva, a setup és a cron csak ezzel indítható |
 | `BLOB_READ_WRITE_TOKEN` | automatikusan, amikor a Blob tárat a projekthez kötöd |
+| `ARMORY_URL` | opcionális; armory-link minta `{slug}` helyőrzővel (alapértelmezés: `https://www.aotc.gg/forever/character/eu/{slug}`) |
 
 ## Telepítés (egyszer)
 1. **Discord Developer Portal** → New Application („Pandemonium Roster”). Bot fülön: **Server Members Intent** bekapcsolása.
