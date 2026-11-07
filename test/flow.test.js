@@ -307,3 +307,17 @@ test('Blizzard guild-szinkron: kulcs nélkül kikapcsolva, kulccsal guild blokk 
   delete process.env.BLIZZARD_CLIENT_ID;
   delete process.env.BLIZZARD_CLIENT_SECRET;
 });
+
+test('guild-párosítás: pontos, ékezet nélküli, egyértelmű keresztnév; ütközésnél nincs párosítás', async () => {
+  const { makeGuildMatcher } = await import('../lib/roster.js');
+  const G = (name) => ({ name, slug: name.toLocaleLowerCase('hu').replace(' ', '-') });
+  const guild = [G('Professor Sawier'), G('Power Zul'), G('Power Archdruid'), G('Patkány Frici'), G('Ash Zulunga'), G('Lazy Healz')];
+  const match = makeGuildMatcher(guild, ['Professor Sawier', 'Power', 'Patkany Frici', 'Ash', 'Lazy', 'lazy']);
+  assert.equal(match('Professor Sawier').slug, 'professor-sawier');
+  assert.equal(match('Patkany Frici').slug, 'patkány-frici', 'ékezet nélkül is');
+  assert.equal(match('Ash').slug, 'ash-zulunga', 'egyértelmű keresztnév');
+  assert.equal(match('Power'), null, 'két Power a guildben');
+  assert.equal(match('Lazy'), null, 'két rosterbeli karakter is Lazy-re hivatkozik');
+  assert.equal(match('Ismeretlen'), null);
+  assert.equal(match(null), null);
+});

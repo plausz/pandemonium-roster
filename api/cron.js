@@ -27,6 +27,7 @@ export async function GET(request) {
       guild = `hiba: ${e.message}`;
     }
   }
-  await publishRoster();
-  return Response.json({ ok: true, records: records.length, removed: gone.length, guild });
+  const pub = await publishRoster();
+  const matched = pub.matched ? `${pub.matched.matched} guildkarakter párosítva a rosterrel (${pub.matched.guild}-ből)` : null;
+  return Response.json({ ok: true, records: records.length, removed: gone.length, guild, ...(matched ? { matched } : {}) });
 }
