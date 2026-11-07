@@ -21,6 +21,8 @@ mock.module('../lib/store.js', {
     allMembers: async () => [...db].filter(([k]) => k.startsWith('m/')).map(([, v]) => structuredClone(v)),
     getConfig: async () => db.get('cfg') ?? {},
     saveConfig: async (c) => db.set('cfg', c),
+    getGuild: async () => db.get('guild') ?? null,
+    saveGuild: async (g) => db.set('guild', g),
   },
 });
 
@@ -37,7 +39,17 @@ const MEMBERS = [
 const calls = [];
 const messages = {};
 let nextMsg = 1;
+const emojis = [];
+const blizzard = { roster: null, profiles: {}, calls: [] };
 globalThis.fetch = async (url, init = {}) => {
+  if (url.startsWith('https://oauth.battle.net/')) return Response.json({ access_token: 'bz', expires_in: 86399 });
+  if (url.startsWith('https://eu.api.blizzard.com/')) {
+    const u = new URL(url);
+    blizzard.calls.push(u.pathname + '?' + u.searchParams.get('namespace'));
+    if (u.pathname.endsWith('/roster')) return blizzard.roster && u.pathname.includes(encodeURIComponent('pändemonium')) ? Response.json(blizzard.roster) : new Response('', { status: 404 });
+    const slug = decodeURIComponent(u.pathname.split('/').pop());
+    return blizzard.profiles[slug] ? Response.json(blizzard.profiles[slug]) : new Response('', { status: 404 });
+  }
   const path = url.replace('https://discord.com/api/v10', '');
   calls.push(`${init.method} ${path}`);
   const body = init.body ? JSON.parse(init.body) : null;
@@ -48,6 +60,8 @@ globalThis.fetch = async (url, init = {}) => {
   if (path.startsWith('/webhooks/')) { calls.lastEdit = body; return Response.json({}); }
   if (path.includes('/members/') && path.includes('/roles/')) return new Response(null, { status: 204 });
   if (path.includes('/commands')) return Response.json(body);
+  if (path === '/applications/app/emojis' && init.method === 'GET') return Response.json({ items: emojis });
+  if (path === '/applications/app/emojis' && init.method === 'POST') { const e = { id: `e${emojis.length + 1}`, name: body.name }; emojis.push(e); return Response.json(e); }
   throw new Error('unexpected ' + path);
 };
 
@@ -216,16 +230,20 @@ test('armory-link csak teljes (Név Vezetéknév) névhez', async () => {
   assert.doesNotMatch(describeChar(ch), /armory/);
 });
 
-test('class-eloszlás: mind a 9 class, arány, hiányzók, altok', async () => {
+test('class-eloszlás: mind a 9 class, arány, hiányzók, altok, színes ikon', async () => {
   const { classDistribution } = await import('../lib/roster.js');
+  const { setClassIcons } = await import('../lib/data.js');
+  setClassIcons({});
   const D = (cls) => ({ role: 'D', cls, spec: 0, off: null, name: null });
   const e = classDistribution([D(7), D(7), D(7), D(4)], [D(8)]);
   assert.match(e.title, /4 fő/);
-  assert.match(e.description, /Warlock +██████████  3  75%/);
-  assert.match(e.description, /Priest +███░░░░░░░  1  25%/);
-  assert.match(e.description, /Druid +░{10}  0   0%  \+1 alt/);
+  assert.match(e.description, /🟪 `██████████  3  75%` \*\*Warlock\*\*/);
+  assert.match(e.description, /⬜ `███░░░░░░░  1  25%` \*\*Priest\*\*/);
+  assert.match(e.description, /🟧 `░{10}  0   0%` \*\*Druid\*\* · _\+1 alt_/);
   assert.match(e.description, /Nincs még main:\*\* Warrior, Paladin, Hunter, Rogue, Shaman, Mage, Druid/);
-  for (const line of e.description.split('```')[1].trim().split('\n')) assert.ok(line.length <= 40, line);
+  setClassIcons({ Warlock: '<:pd_warlock:1>' });
+  assert.match(classDistribution([D(7)], []).description, /<:pd_warlock:1> `/);
+  setClassIcons({});
 });
 
 test('roster: class-eloszlás a fő üzenetben, név modal teljes névvel', async () => {
@@ -240,4 +258,52 @@ test('roster: class-eloszlás a fő üzenetben, név modal teljes névvel', asyn
   const m = nameModal('m:D:7:0:x', 'm', 'Plausz Pandemonium');
   assert.equal(m.components[0].components[0].max_length, 32);
   assert.equal(m.components[0].components[0].value, 'Plausz Pandemonium');
+});
+
+test('class-emojik: a hiányzók feltöltődnek, a roster a bot emojijait használja', async () => {
+  const cfg = db.get('cfg');
+  delete cfg.classEmojis;
+  const { publishRoster } = await import('../lib/roster.js');
+  await publishRoster();
+  assert.equal(emojis.length, 9);
+  assert.equal(emojis[0].name, 'pd_warrior');
+  assert.equal(db.get('cfg').classEmojis.Warlock, '<:pd_warlock:e8>');
+  await publishRoster(); // másodszor nem tölt fel újra
+  assert.equal(emojis.length, 9);
+  const { circlePng } = await import('../lib/png.js');
+  const png = circlePng('8788EE');
+  assert.deepEqual([...png.subarray(1, 4)], [0x50, 0x4e, 0x47]);
+});
+
+test('Blizzard guild-szinkron: kulcs nélkül kikapcsolva, kulccsal guild blokk és ilvl a rosterben', async () => {
+  const { GET } = await import('../api/cron.js');
+  const auth = { headers: { authorization: 'Bearer cron' } };
+  let r = await (await GET(new Request('https://x/api/cron', auth))).json();
+  assert.equal(r.guild, 'kikapcsolva');
+  assert.equal(blizzard.calls.length, 0);
+
+  process.env.BLIZZARD_CLIENT_ID = 'id';
+  process.env.BLIZZARD_CLIENT_SECRET = 'secret';
+  blizzard.roster = { members: [
+    { character: { name: 'Plausz', surname: 'Pandemonium', slug: 'plausz-pandemonium', level: 20, playable_class: { id: 9 } }, rank: 0 },
+    { character: { name: 'Patkány', surname: 'Frici', slug: 'patkány-frici', level: 15, playable_class: { id: 4 } }, rank: 3 },
+    { character: { name: 'Kicsi', surname: 'Mag', slug: 'kicsi-mag', level: 5, playable_class: { id: 8 } }, rank: 4 },
+  ] };
+  blizzard.profiles['plausz-pandemonium'] = { level: 21, equipped_item_level: 34, character_class: { id: 9 } };
+  db.set('m/u1', { userId: 'u1', main: { role: 'D', cls: 7, spec: 0, off: null, name: 'Plausz Pandemonium' }, alts: [] });
+  r = await (await GET(new Request('https://x/api/cron', auth))).json();
+  assert.equal(r.guild, '3 karakter');
+  assert.ok(blizzard.calls.every((c) => c.endsWith('?profile-forever-eu')));
+  assert.ok(!blizzard.calls.some((c) => c.includes('kicsi-mag')), '10. szint alatt nincs profil-lekérés');
+  const g = db.get('guild');
+  assert.equal(g.members[0].ilvl, 34);
+  assert.equal(g.members[0].level, 21);
+  assert.equal(g.members[1].cls, 3);
+  assert.match(mainRoster(), /Plausz Pandemonium\*\*\]\(.*\) · 21\. szint · ilvl 34/);
+  const ge = messages[db.get('cfg').altMessageId].embeds[1];
+  assert.match(ge.title, /3 karakter/);
+  assert.match(ge.description, /Nincs a rosterben \(2\):.*Patkány Frici \(15\).*Kicsi Mag \(5\)/);
+  assert.doesNotMatch(ge.description, /Plausz Pandemonium/);
+  delete process.env.BLIZZARD_CLIENT_ID;
+  delete process.env.BLIZZARD_CLIENT_SECRET;
 });

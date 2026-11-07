@@ -5,6 +5,8 @@ Discord-bot Vercelen (HTTP interactions, nincs állandóan futó folyamat). Él�
 - `/karakter` parancs vagy a #roster **✏️ gombja** → lépésenként: szerep → class (csak a szerephez illők) → main spec → offspec (opcionális) → karakternév (opcionális). Ugyanígy **legfeljebb 4 alt** (➕ gomb; meglévő alt módosítása/törlése a lenyíló listából).
 - Mentéskor a bot **beállítja a rangokat**: szerep-rang a main és az offspec alapján (🛡️ Tank / 💚 Healer / 🗡️ DPS), class-rang a main és az összes alt alapján. A klánrangokhoz (Panda, Friends…) nem nyúl.
 - A **#roster** két üzenete minden mentéskor frissül: (1) Panda roster a mainekkel (és akik még nem töltötték ki) + **class-eloszlás** (mind a 9 class: darab, arány, sáv, Panda altok száma, hiányzó classok) + a többi rang statisztikája, (2) **Panda alt roster** szerepek szerint. A gombok (✏️, 🔄) az alt roster alatt vannak.
+- **Class-színek:** a roster soraiban és a class-eloszlásban minden karakter előtt Blizzard class-színű kör áll. Ezek a bot saját (alkalmazás-) emojijai, a bot az első frissítéskor magától feltölti őket (`lib/png.js` rajzolja, `lib/emojis.js` tölti fel); amíg nincsenek meg, színes unicode jelek helyettesítik.
+- **Blizzard guild-szinkron** (opcionális): ha a `BLIZZARD_CLIENT_ID` és `BLIZZARD_CLIENT_SECRET` be van állítva, a napi karbantartás (és a `/api/cron` kézi hívása) lekéri a Pändemonium guild tagjait és a karakterek szintjét / item levelét a hivatalos API-ból (`profile-forever-eu`). A rosterben a teljes névvel megadott karakterek mellé kiírja a szintet és az ilvl-t, az alt roster alá pedig guild-blokk kerül: class-megoszlás, legmagasabb szint, és a **rosterben nem szereplő guildkarakterek** listája. Forever: a karakterek csak 10. szinttől és kilépés után látszanak az API-ban. Hiba esetén a roster a korábbi adatokkal frissül.
 - **Armory-link:** ha a karakternév teljes (Forever: „Név Vezetéknév”, legfeljebb 32 karakter), a rosterben a név a **hivatalos Blizzard Forever armoryra** mutat (`https://worldofwarcraft.blizzard.com/en-gb/forever/eu/armory/character/nev-vezeteknev`). A Foreverben nincsenek realmok, a karaktert a teljes név azonosítja; csak keresztnévhez nincs link. A #roster gombjai között **🏰 Guild armory** gomb is van (Pändemonium guild oldal). Mindkettő cserélhető: `ARMORY_URL` (`{slug}` helyőrzővel), `GUILD_ARMORY_URL`.
 - Ami tárolt adatot olvas (parancs, Vissza, összegzés, alt kiválasztása), az halasztott válasszal megy, így hidegindításnál sem lépi túl a Discord 3 mp-es határát. A futásidők a Vercel naplóban `[timing]` sorként látszanak.
 - **Napi karbantartás** (03:00 UTC): a szerverről kilépett tagok adatai törlődnek, a roster újraépül.
@@ -14,7 +16,9 @@ Discord-bot Vercelen (HTTP interactions, nincs állandóan futó folyamat). Él�
 |---|---|
 | `api/interactions.js` | Discord interakciók (parancs, gombok, menük, modal) |
 | `api/setup.js` | `/karakter` regisztrálása + roster üzenet kitétele (`/api/setup?secret=…`) |
-| `api/cron.js` | Napi karbantartás |
+| `api/cron.js` | Napi karbantartás + Blizzard guild-szinkron |
+| `lib/blizzard.js` | Hivatalos Blizzard API (OAuth, guild roster, karakterprofil) |
+| `lib/emojis.js`, `lib/png.js` | Class-színű bot-emojik rajzolása és feltöltése |
 | `lib/data.js` | Classok, specek, szerepek |
 | `lib/roster.js` | A #roster üzenet felépítése |
 | `lib/roles.js` | Rangkiosztás |
@@ -30,6 +34,8 @@ Discord-bot Vercelen (HTTP interactions, nincs állandóan futó folyamat). Él�
 | `ROSTER_CHANNEL_ID` | a #roster csatorna azonosítója |
 | `SETUP_SECRET`, `CRON_SECRET` | opcionális; ha be vannak állítva, a setup és a cron csak ezzel indítható |
 | `BLOB_READ_WRITE_TOKEN` | automatikusan, amikor a Blob tárat a projekthez kötöd |
+| `BLIZZARD_CLIENT_ID`, `BLIZZARD_CLIENT_SECRET` | opcionális; develop.battle.net → API Access → kliens (a secret **titkos**, „Sensitive” típusként add meg). Enélkül a guild-szinkron ki van kapcsolva |
+| `BLIZZARD_GUILD` | opcionális; a guild neve a Blizzard API-ban (alapértelmezés: `Pändemonium`) |
 | `ARMORY_URL`, `GUILD_ARMORY_URL` | opcionális; karakter-armory minta `{slug}` helyőrzővel, illetve a guild armory címe (alapértelmezés: hivatalos Blizzard Forever armory, Pändemonium) |
 
 ## Telepítés (egyszer)
