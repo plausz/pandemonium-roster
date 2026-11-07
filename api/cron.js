@@ -1,8 +1,7 @@
 import { publishRoster } from '../lib/roster.js';
 import { allMembers, deleteMember } from '../lib/store.js';
 import { listMembers } from '../lib/discord.js';
-import { saveGuild } from '../lib/store.js';
-import { blizzardEnabled, fetchGuild } from '../lib/blizzard.js';
+import { syncGuild } from '../lib/sync.js';
 
 // Napi karbantartás (Vercel Cron): a szerverről kilépett tagok adatait törli, majd újraépíti a rostert.
 // Ha a CRON_SECRET be van állítva, a Vercel Cron azt küldi, és csak azzal fogadjuk el. Enélkül is biztonságos:
@@ -16,17 +15,7 @@ export async function GET(request) {
   const gone = records.filter((r) => !present.has(r.userId));
   for (const r of gone) await deleteMember(r.userId);
   // Blizzard guild-szinkron (ha be vannak állítva a kulcsok). Hiba esetén a roster a korábbi adatokkal frissül.
-  let guild = 'kikapcsolva';
-  if (blizzardEnabled()) {
-    try {
-      const g = await fetchGuild();
-      await saveGuild(g);
-      guild = `${g.members.length} karakter, ebből ${g.members.filter((m) => m.ilvl != null).length} item levellel, ${g.members.filter((m) => m.level >= 10).length} legalább 10. szintű`;
-    } catch (e) {
-      console.error('guild sync', e);
-      guild = `hiba: ${e.message}`;
-    }
-  }
+  const guild = await syncGuild();
   const pub = await publishRoster();
   const matched = pub.matched ? `${pub.matched.matched} guildkarakter párosítva a rosterrel (${pub.matched.guild}-ből)` : null;
   return Response.json({ ok: true, records: records.length, removed: gone.length, guild, ...(matched ? { matched } : {}) });

@@ -4,6 +4,7 @@ import { specsFor } from '../lib/data.js';
 import { getMember, saveMember, deleteMember } from '../lib/store.js';
 import { syncRoles } from '../lib/roles.js';
 import { publishRoster } from '../lib/roster.js';
+import { syncGuild } from '../lib/sync.js';
 import * as W from '../lib/wizard.js';
 
 const T = { PING: 1, COMMAND: 2, COMPONENT: 3, MODAL: 5 };
@@ -66,8 +67,8 @@ function onComponent(i) {
   const show = fromRoster ? reply : update;
 
   if (id === 'refresh') {
-    waitUntil(publishRoster().catch((e) => console.error('refresh', e)));
-    return reply({ flags: 64, content: '🔄 A roster frissítése elindult, pár másodperc múlva látszik.' });
+    waitUntil(syncGuild({ minAgeMs: 10 * 60_000 }).then(() => publishRoster()).catch((e) => console.error('refresh', e)));
+    return reply({ flags: 64, content: '🔄 A roster frissítése elindult (a Blizzard armory adataival együtt), pár másodperc múlva látszik.' });
   }
 
   if (id === 'menu:home') return deferred(i, { ephemeralNew: fromRoster }, loadHome(userId));

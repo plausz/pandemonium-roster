@@ -321,3 +321,19 @@ test('guild-párosítás: pontos, ékezet nélküli, egyértelmű keresztnév; �
   assert.equal(match('Ismeretlen'), null);
   assert.equal(match(null), null);
 });
+
+test('🔄 gomb: Blizzard-szinkron is fut, de legfeljebb 10 percenként', async () => {
+  process.env.BLIZZARD_CLIENT_ID = 'id';
+  process.env.BLIZZARD_CLIENT_SECRET = 'secret';
+  db.set('guild', { syncedAt: new Date(Date.now() - 11 * 60_000).toISOString(), members: [] });
+  blizzard.calls.length = 0;
+  await send(click('refresh', undefined, false));
+  await drain();
+  assert.ok(blizzard.calls.some((c) => c.includes('/roster')), 'régi adatnál szinkronizál');
+  blizzard.calls.length = 0;
+  await send(click('refresh', undefined, false));
+  await drain();
+  assert.equal(blizzard.calls.length, 0, 'friss adatnál nem hívja újra a Blizzardot');
+  delete process.env.BLIZZARD_CLIENT_ID;
+  delete process.env.BLIZZARD_CLIENT_SECRET;
+});
