@@ -292,7 +292,7 @@ test('Blizzard guild-szinkron: kulcs nélkül kikapcsolva, kulccsal guild blokk 
   blizzard.profiles['plausz-pandemonium'] = { level: 21, equipped_item_level: 34, character_class: { id: 9 } };
   db.set('m/u1', { userId: 'u1', main: { role: 'D', cls: 7, spec: 0, off: null, name: 'Plausz Pandemonium' }, alts: [] });
   r = await (await GET(new Request('https://x/api/cron', auth))).json();
-  assert.equal(r.guild, '3 karakter');
+  assert.equal(r.guild, '3 karakter, ebből 1 item levellel, 2 legalább 10. szintű');
   assert.ok(blizzard.calls.every((c) => c.endsWith('?profile-forever-eu')));
   assert.ok(!blizzard.calls.some((c) => c.includes('kicsi-mag')), '10. szint alatt nincs profil-lekérés');
   const g = db.get('guild');
