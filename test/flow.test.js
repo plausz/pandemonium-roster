@@ -496,7 +496,7 @@ test('officer párosítás: lista → karakter → tag → main neve / új alt /
 
 test('tagfelvétel: panel, felugró ablak, privát csatorna, ismételt beküldés, lezárás', async () => {
   Object.assign(process.env, { TGF_CHANNEL_ID: 'tgfch', TGF_LOG_CHANNEL_ID: 'tgflog' });
-  const tgf = { posts: [], created: [], deleted: [], channels: new Set(), panel: null };
+  const tgf = { posts: [], created: [], deleted: [], channels: new Set(), panel: null, applicantRoles: [] };
   const prevFetch = globalThis.fetch;
   globalThis.fetch = async (url, init = {}) => {
     const path = url.replace('https://discord.com/api/v10', '');
@@ -510,6 +510,7 @@ test('tagfelvétel: panel, felugró ablak, privát csatorna, ismételt beküldé
     if (cm && cm[2] && m === 'POST') { tgf.posts.push({ ch: cm[1], body }); return Response.json({ id: 'x' }); }
     if (cm && !cm[2] && m === 'GET') return tgf.channels.has(cm[1]) ? Response.json({ id: cm[1] }) : new Response('{}', { status: 404 });
     if (cm && !cm[2] && m === 'DELETE') { tgf.deleted.push(cm[1]); tgf.channels.delete(cm[1]); return Response.json({}); }
+    if (path === '/guilds/g1/members/900000000000000001' && m === 'GET') return Response.json({ user: { id: '900000000000000001' }, roles: tgf.applicantRoles });
     return prevFetch(url, init);
   };
   try {
@@ -517,7 +518,8 @@ test('tagfelvétel: panel, felugró ablak, privát csatorna, ismételt beküldé
     // panel kitétele, majd ugyanannak az üzenetnek a frissítése
     let rep = await publishTgfPanel();
     assert.equal(rep.messageId, 'panel1');
-    assert.deepEqual(rep.missingRoles, ['Klánvezető']);
+    assert.deepEqual(rep.missingRoles, ['Klánvezető', 'OldPanda']);
+    assert.match(tgf.panel.embeds[0].description, /Elbírálás/);
     assert.equal(tgf.panel.components[0].components[0].custom_id, 'tgf:apply');
     rep = await publishTgfPanel();
     assert.equal(rep.messageId, 'panel1');
@@ -531,14 +533,15 @@ test('tagfelvétel: panel, felugró ablak, privát csatorna, ismételt beküldé
     assert.equal(r.data.custom_id, 'tgf:submit');
     assert.equal(r.data.components.length, 5);
     // beküldés → halasztott ephemeral válasz, privát csatorna
-    const values = { char: 'Zug Zug', cls: 'Shaman resto', play: 'raid, BG', from: 'Plausz', intro: 'Régi Taurisként jönnék.' };
+    assert.ok(r.data.components.every((row) => row.components[0].required), 'minden mező kötelező');
+    const values = { nick: 'Zugi', char: 'Zug Zug', cls: 'Shaman resto', play: 'raid, BG', intro: 'Régi Taurisként jönnék, Plausz hívott.' };
     const modal = (v) => as(applicant, { type: 5, data: { custom_id: 'tgf:submit', components: Object.entries(v).map(([k, value]) => ({ type: 1, components: [{ type: 4, custom_id: k, value }] })) } });
     r = await send(modal(values));
     assert.deepEqual(r, { type: 5, data: { flags: 64 } });
     await drain();
     assert.equal(tgf.created.length, 1);
     const ch = tgf.created[0];
-    assert.equal(ch.name, 'tgf-uj-jelentkezo');
+    assert.equal(ch.name, 'tgf-zug-zug');
     assert.equal(ch.parent_id, 'cat');
     const ow = Object.fromEntries(ch.permission_overwrites.map((o) => [o.id, o]));
     assert.equal(ow.g1.deny, String(1n << 10n), '@everyone nem látja');
@@ -548,7 +551,8 @@ test('tagfelvétel: panel, felugró ablak, privát csatorna, ismételt beküldé
     assert.equal(ow.friends, undefined, 'Friends nem');
     const post = tgf.posts.find((p) => p.ch === 'ch1').body;
     assert.match(post.content, /<@900000000000000001> <@&officer>/);
-    assert.equal(post.embeds[0].fields[1].value, 'Shaman resto');
+    assert.equal(post.embeds[0].title, 'Jelentkezés: Zugi');
+    assert.equal(post.embeds[0].fields[2].value, 'Shaman resto');
     assert.equal(post.components[0].components[0].custom_id, 'tgf:close:900000000000000001');
     assert.match(calls.lastEdit.content, /<#ch1>/);
     assert.equal(db.get('tgf/900000000000000001').channelId, 'ch1');
@@ -562,15 +566,23 @@ test('tagfelvétel: panel, felugró ablak, privát csatorna, ismételt beküldé
     r = await send(as(applicant, { type: 3, data: { custom_id: 'tgf:close:900000000000000001' }, message: { flags: 0 } }));
     assert.match(r.data.content, /csak Officer/);
     r = await send(as(officer, { type: 3, data: { custom_id: 'tgf:close:900000000000000001' }, message: { flags: 0 } }));
-    assert.equal(r.data.components[0].components[0].custom_id, 'tgf:close2:900000000000000001');
-    r = await send(as(officer, { type: 3, data: { custom_id: 'tgf:close2:900000000000000001' }, message: { flags: 64 } }));
-    assert.equal(r.type, 7);
+    assert.deepEqual(r.data.components[0].components.map((b) => b.custom_id), ['tgf:close2:900000000000000001:ok', 'tgf:close2:900000000000000001:no']);
+    // „Felvettük” klánrang nélkül: nem zár le, figyelmeztet
+    r = await send(as(officer, { type: 3, data: { custom_id: 'tgf:close2:900000000000000001:ok' }, message: { flags: 64 } }));
+    assert.equal(r.type, 6);
+    await drain();
+    assert.deepEqual(tgf.deleted, []);
+    assert.match(calls.lastEdit.content, /még nincs klánrangja/);
+    // rang megadva → lezárás, napló a döntéssel és a ranggal
+    tgf.applicantRoles = ['panda'];
+    await send(as(officer, { type: 3, data: { custom_id: 'tgf:close2:900000000000000001:ok' }, message: { flags: 64 } }));
     await drain();
     assert.deepEqual(tgf.deleted, ['ch1']);
     assert.equal(db.get('tgf/900000000000000001'), undefined);
     const log = tgf.posts.find((p) => p.ch === 'tgflog').body;
-    assert.match(log.embeds[0].title, /Lezárt jelentkezés: Új Jelentkező/);
-    assert.equal(log.embeds[0].fields[2].value, 'csak PvP');
+    assert.match(log.embeds[0].title, /Felvéve: Zugi/);
+    assert.equal(log.embeds[0].fields[3].value, 'csak PvP');
+    assert.equal(log.embeds[0].fields[4].value, 'Panda');
   } finally {
     globalThis.fetch = prevFetch;
     delete process.env.TGF_CHANNEL_ID;
