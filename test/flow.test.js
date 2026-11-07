@@ -207,13 +207,13 @@ test('cron: kilépett tag adatai törlődnek', async () => {
 
 test('armory-link csak teljes (Név Vezetéknév) névhez', async () => {
   const { armoryUrl, describeChar } = await import('../lib/data.js');
-  assert.equal(armoryUrl('Plausz Pandemonium'), 'https://www.aotc.gg/forever/character/eu/plausz-pandemonium');
-  assert.equal(armoryUrl('  Árvíz   Tűrő '), 'https://www.aotc.gg/forever/character/eu/%C3%A1rv%C3%ADz-t%C5%B1r%C5%91');
+  assert.equal(armoryUrl('Plausz Pandemonium'), 'https://worldofwarcraft.blizzard.com/en-gb/forever/eu/armory/character/plausz-pandemonium');
+  assert.equal(armoryUrl('  Árvíz   Tűrő '), 'https://worldofwarcraft.blizzard.com/en-gb/forever/eu/armory/character/%C3%A1rv%C3%ADz-t%C5%B1r%C5%91');
   assert.equal(armoryUrl('Plausz'), null);
   assert.equal(armoryUrl(null), null);
   const ch = { role: 'D', cls: 7, spec: 0, off: null, name: 'Plausz Pandemonium' };
-  assert.match(describeChar(ch, { link: true }), /\[\*\*Plausz Pandemonium\*\*\]\(https:\/\/www\.aotc\.gg\/forever\/character\/eu\/plausz-pandemonium\)/);
-  assert.doesNotMatch(describeChar(ch), /aotc/);
+  assert.match(describeChar(ch, { link: true }), /\[\*\*Plausz Pandemonium\*\*\]\(https:\/\/worldofwarcraft\.blizzard\.com\/en-gb\/forever\/eu\/armory\/character\/plausz-pandemonium\)/);
+  assert.doesNotMatch(describeChar(ch), /armory/);
 });
 
 test('class-eloszlás: mind a 9 class, arány, hiányzók, altok', async () => {
@@ -233,6 +233,9 @@ test('roster: class-eloszlás a fő üzenetben, név modal teljes névvel', asyn
   const [main] = await buildRoster();
   assert.equal(main.embeds.length, 3);
   assert.match(main.embeds[1].title, /Class-eloszlás/);
+  const [, alt] = await buildRoster();
+  const link = alt.components[0].components.find((c) => c.style === 5);
+  assert.equal(link.url, 'https://worldofwarcraft.blizzard.com/en-gb/forever/eu/armory/guild/p%C3%A4ndemonium');
   const { nameModal } = await import('../lib/wizard.js');
   const m = nameModal('m:D:7:0:x', 'm', 'Plausz Pandemonium');
   assert.equal(m.components[0].components[0].max_length, 32);
