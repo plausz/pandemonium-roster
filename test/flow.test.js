@@ -349,8 +349,14 @@ test('officer mód: más tag szerkesztése /roster-admin paranccsal, jogosultsá
     return prevFetch(url, init);
   };
   const as = (m, payload) => signed({ guild_id: 'g1', token: 'tok', member: m, ...payload });
+  // jobb klikkes menü (USER context menu): ugyanaz a menü
+  let r = await send(as(officer, { type: 2, data: { name: 'Roster szerkesztése', type: 2, target_id: TARGET, resolved: { users: { [TARGET]: extra[TARGET].user } } } }));
+  assert.deepEqual(r, { type: 5, data: { flags: 64 } });
+  await drain();
+  assert.match(calls.lastEdit.embeds[0].title, /Újonc karakterei/);
+  assert.equal(calls.lastEdit.components[0].components[0].custom_id, `t${TARGET}.w:m:start`);
   // jog nélkül elutasítva
-  let r = await send(as(pleb, { type: 2, data: { name: 'roster-admin', options: [{ name: 'tag', type: 6, value: TARGET }] } }));
+  r = await send(as(pleb, { type: 2, data: { name: 'roster-admin', options: [{ name: 'tag', type: 6, value: TARGET }] } }));
   assert.match(r.data.content, /Officer jog/);
   // officer: a cél-tag menüje, jelölt gombokkal
   r = await send(as(officer, { type: 2, data: { name: 'roster-admin', options: [{ name: 'tag', type: 6, value: TARGET }] } }));

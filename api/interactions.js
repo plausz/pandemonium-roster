@@ -109,6 +109,8 @@ function onCommand(i) {
     const target = i.data.target_id ?? i.data.options?.find((o) => o.name === 'tag')?.value;
     if (!target || i.data.resolved?.users?.[target]?.bot) return reply({ flags: 64, content: 'Válassz egy tagot (botot nem lehet).' });
     const ctx = context(i, `t${target}.`);
+    // Diagnosztika: a válasz (csak a kiadónak látható üzenet) abban a csatornában jelenik meg, ahonnan a parancs jött.
+    console.log(`[admin] ${i.data.name} channel=${i.channel?.name ?? i.channel_id} channelType=${i.channel?.type} context=${i.context}`);
     return deferred(ctx, { ephemeralNew: true }, loadHome(ctx));
   }
   return reply({ flags: 64, content: 'Ismeretlen parancs.' });
