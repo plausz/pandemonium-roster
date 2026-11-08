@@ -59,6 +59,7 @@ globalThis.fetch = async (url, init = {}) => {
   if (path.endsWith('/roles')) return Response.json(ROLES);
   if (path.includes('/members?')) return Response.json(MEMBERS);
   if (path === '/channels/roster/messages' && init.method === 'POST') { const id = `msg${nextMsg++}`; messages[id] = body; return Response.json({ id }); }
+  if (path.startsWith('/channels/roster/messages/') && init.method === 'DELETE') { delete messages[path.split('/').pop()]; return new Response(null, { status: 204 }); }
   if (path.startsWith('/channels/roster/messages/')) { messages[path.split('/').pop()] = body; return Response.json({}); }
   if (path.startsWith('/webhooks/')) { calls.lastEdit = body; return Response.json({}); }
   if (path.includes('/members/') && path.includes('/roles/')) return new Response(null, { status: 204 });
@@ -588,4 +589,43 @@ test('tagfelvétel: panel, felugró ablak, privát csatorna, ismételt beküldé
     delete process.env.TGF_CHANNEL_ID;
     delete process.env.TGF_LOG_CHANNEL_ID;
   }
+});
+
+test('nagy roster: több üzenetre bomlik, sorhatáron, csonka emoji nélkül; a gombok az utolsón', async () => {
+  const { publishRoster } = await import('../lib/roster.js');
+  const before = MEMBERS.length;
+  for (let n = 0; n < 40; n++) {
+    const id = `big${n}`;
+    MEMBERS.push({ user: { id, username: `hosszunevu_tag_${n}` }, roles: ['panda'] });
+    db.set(`m/${id}`, { userId: id, main: { role: 'D', cls: n % 9 === 8 ? 8 : 7, spec: 0, off: null, name: `Hosszúnevű${n} Karakterneve` }, alts: [{ role: 'D', cls: 6, spec: 0, off: null, name: `Altocska${n} Masodiknev` }] });
+  }
+  db.get('cfg').classEmojis = Object.fromEntries(['Warrior', 'Paladin', 'Hunter', 'Rogue', 'Priest', 'Shaman', 'Mage', 'Warlock', 'Druid'].map((c, i) => [c, `<:pd_${c.toLowerCase()}:15686434554107${i}69>`]));
+  const r = await publishRoster();
+  assert.ok(r.messages > 2, `több üzenet kell (${r.messages})`);
+  const ids = db.get('cfg').rosterMessageIds;
+  assert.equal(ids.length, r.messages);
+  ids.forEach((id, k) => {
+    const m = messages[id];
+    const total = m.embeds.reduce((n, e) => n + (e.title?.length ?? 0) + (e.description?.length ?? 0) + (e.footer?.text?.length ?? 0) + (e.fields ?? []).reduce((a, f) => a + f.name.length + f.value.length, 0), 0);
+    assert.ok(total <= 6000, `üzenet ${k}: ${total}`);
+    for (const e of m.embeds) {
+      assert.ok((e.description ?? '').length <= 4096);
+      assert.doesNotMatch(e.description ?? '', /rövidítve/);
+      assert.doesNotMatch(e.description ?? '', /<:[^>\n]*(\n|$)/, 'nincs félbevágott emoji');
+    }
+    assert.equal(m.components.length, k === ids.length - 1 ? 1 : 0, 'gombok csak az utolsón');
+  });
+  assert.match(messages[ids[0]].embeds[0].title, /Panda roster — 4\d kitöltött/);
+  assert.ok(Object.values(messages).some((m) => m.embeds?.some((e) => /folytatás/.test(e.title))), 'folytatás embed');
+  // kevesebb tag → kevesebb üzenet: a régiek törlődnek, újrakitétel
+  MEMBERS.splice(before);
+  for (let n = 0; n < 40; n++) db.delete(`m/big${n}`);
+  calls.length = 0;
+  const r2 = await publishRoster();
+  assert.ok(r2.messages < r.messages);
+  assert.equal(calls.filter((c) => c.startsWith('DELETE /channels/roster/messages/')).length, r.messages);
+  // azonos számnál helyben szerkeszt
+  calls.length = 0;
+  await publishRoster();
+  assert.ok(!calls.some((c) => c.startsWith('POST /channels/roster/messages')), 'nincs újrakitétel');
 });
